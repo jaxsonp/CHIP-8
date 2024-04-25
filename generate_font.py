@@ -21,6 +21,6 @@ font = [
 	0xF0, 0x80, 0xF0, 0x80, 0x80  # F
 ]
 
-with open("src/font", "wb") as f:
+with open("src/font.bin", "wb") as f:
     for byte in font:
         f.write(byte.to_bytes())
