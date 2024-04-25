@@ -1,8 +1,9 @@
 [package]
-name = "CHIP-8-interpreter"
+name = "chip8"
 version = "0.1.0"
 edition = "2021"
 authors = ["Jaxson Pahukula <jaxpahu@gmail.com>"]
 readme = "README.md"
 
 [dependencies]
+clap = { version = "4.5.4", features = ["derive"] }
