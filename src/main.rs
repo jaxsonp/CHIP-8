@@ -22,9 +22,14 @@ fn main() {
 	display.set_window_title(format!("CHIP-8  -  {}", rom_file));
 
 
-	let mut emulator = Chip8::new();
-	emulator.attach_pixel_buf(display.create_pixel_buf());
-	emulator.load_rom();
+	let mut emulator = Chip8::new(ips, display.create_pixel_buf());
+	match emulator.load_rom(&rom_file) {
+		Ok(_) => {},
+		Err(_) => {
+			println!("Failed to load ROM");
+			return;
+		},
+	}
 
 	// starting
 

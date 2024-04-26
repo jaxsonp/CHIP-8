@@ -4,11 +4,10 @@ use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
     event_loop::EventLoop,
-    keyboard::KeyCode,
     window::{Window, WindowBuilder},
 };
 use winit_input_helper::WinitInputHelper;
-use pixels::{wgpu::Color, Pixels, SurfaceTexture};
+use pixels::{Pixels, SurfaceTexture};
 
 use crate::*;
 
