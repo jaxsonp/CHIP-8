@@ -4,11 +4,46 @@ A basic CHIP-8 interpreter written in rust. Mostly targets the original COSMAC V
 
 _Written using help from Tobias Langhoff's [Guide to making a CHIP-8 emulator ](https://tobiasvl.github.io/blog/write-a-chip-8-emulator/) and the Wikipedia [CHIP-8 article](https://en.wikipedia.org/wiki/CHIP-8)._
 
-## Usage
+## Assembler
 
-## Examples
+For ease of writing test programs, I slapped together an extremely basic assembler that takes a file of whitespace separated, hex encoded CHIP-8 code and writes it into a .ch8 binary file, ready to be loaded. The assembler will also ignore all lines starting with a '#', allowing for commented code.
 
-There are some example roms provided in the `/examples/` directory:
+### Usage
+
+`$ assembler.py [-h] [-o output] input`
+
+Output will default to `out.ch8` if no file is specified
+
+### Example source
+
+```
+1204 1202
+
+# generating random number
+C0FF
+A300
+F033
+
+# drawing number
+F265
+6301
+6401
+
+F029 D345
+7305
+F129 D345
+7305
+F229 D345
+
+# infinite loop
+1202
+```
+
+Corresponding command: `$ assembler.py examples/src/random.asm -o examples/random.ch8`
+
+## Included Examples
+
+There are some example roms in the `/examples/` directory I provided to test and play around with.
 
 ### `ibm.ch8`
 

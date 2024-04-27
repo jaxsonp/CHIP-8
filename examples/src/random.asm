@@ -1,5 +1,6 @@
-1204
-1202
+# This program generates a random number and displays it on the screen
+
+1204 1202
 
 # generating random number
 C0FF
