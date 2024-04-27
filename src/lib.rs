@@ -2,20 +2,18 @@
 
 use std::fs::File;
 use std::io::prelude::*;
-use std::ops::{AddAssign, BitAndAssign, BitOrAssign, BitXorAssign, Shr};
+use std::ops::{BitAndAssign, BitOrAssign, BitXorAssign};
 use std::path::Path;
-use pixels::{Pixels, wgpu::Color};
-
-// TODO Delete
-use std::time::Duration;
+use std::time::{Instant, Duration};
 use std::thread::sleep;
+use pixels::{Pixels, wgpu::Color};
+use rand::Rng;
 
 mod font;
 use font::FONT;
 mod display;
 
 const MEM_SIZE: usize = 4096; // in bytes
-const STACK_SIZE: usize = 16;
 const N_REGISTERS: usize = 16;
 
 const PROGRAM_START_ADDR: u16 = 0x200;
@@ -118,10 +116,12 @@ impl Chip8 {
 		self.render();
 
 		println_debug!("Starting execution");
+		let time_per_instruction = Duration::from_secs_f32(1.0 / (self.ips as f32));
 		loop {
+			let start_time = Instant::now();
 
 			let instruction = self.fetch_instruction();
-			println_debug!("{:#05X} > {:#06X}", self.pc, instruction);
+			println_debug!("{:#05X} > {:#06X}", self.pc - 2, instruction);
 
 			match self.decode_and_execute(instruction) {
 				Ok(_) => {},
@@ -129,6 +129,11 @@ impl Chip8 {
 					println!("Failed: {why}");
 					break;
 				}
+			}
+
+			let elapsed = Instant::now() - start_time;
+			if elapsed < time_per_instruction {
+				sleep(time_per_instruction - elapsed);
 			}
 		}
 		println_debug!("Completed execution");
@@ -185,7 +190,8 @@ impl Chip8 {
 						}
 					},
 					_ => {
-						return Err("Unknown instruction");
+						// Call machine code routine
+						return Err("Unhandled instruction");
 					},
 				}
 			},
@@ -287,6 +293,15 @@ impl Chip8 {
 				// Set index register
 				self.I = NNN;
 			},
+			0xB => {
+				// Jump to NNN + V0
+				self.I = NNN + (self.V[0] as u16);
+			},
+			0xC => {
+				// Rand gen
+				// Sets VX to random u8 & NN
+				self.V[X] = rand::thread_rng().gen::<u8>() & NN;
+			},
 			0xD => {
 				// Draw
 				// draws an 8 wide, N tall sprite at VX, VY from the memory location at I
@@ -310,10 +325,17 @@ impl Chip8 {
 			},
 			0xF => {
 				match (nibbles[2], nibbles[3]) {
+					(0x1, 0xE) => {
+						// Increments I by VX
+						self.I = self.I.wrapping_add(self.V[X] as u16);
+					},
+					(0x2, 0x9) => {
+						// Set I to sprite location for char in VX
+						self.I = FONT_ADDR + ((self.V[X] * 5) as u16)
+					},
 					(0x3, 0x3) => {
 						// Binary coded decimal storage
 						// Store VX's hundreds digit at I, tens at I+1, and ones at I+2
-
 						self.memory[addr!(self.I)] = self.V[X].div_euclid(100);
 						self.memory[addr!(self.I) + 1] = self.V[X].div_euclid(10) % 10;
 						self.memory[addr!(self.I) + 2] = self.V[X] % 10;
@@ -364,7 +386,7 @@ impl Chip8 {
 	}
 }
 
-// converting u16 addresses to usize
+/// Converting u16 addresses to usize, masking the first 12 bits
 #[macro_export]
 macro_rules! addr {
 	($num:expr) => {
