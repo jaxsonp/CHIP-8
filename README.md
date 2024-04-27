@@ -43,7 +43,7 @@ Corresponding command: `$ assembler.py examples/src/random.asm -o examples/rando
 
 ## Included Examples
 
-There are some example roms in the `/examples/` directory I provided to test and play around with.
+There are some example roms in the `/examples/` directory to test and play around with.
 
 ### `ibm.ch8`
 

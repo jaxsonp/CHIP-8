@@ -13,7 +13,7 @@ mod font;
 use font::FONT;
 mod display;
 
-const MEM_SIZE: usize = 4096; // in bytes
+const MEM_SIZE: usize = 4096; // bytes
 const N_REGISTERS: usize = 16;
 
 const PROGRAM_START_ADDR: u16 = 0x200;
@@ -21,6 +21,7 @@ const FONT_ADDR: u16 = 0x050;
 
 pub const DISPLAY_W: usize = 64;
 pub const DISPLAY_H: usize = 32;
+const REFRESH_RATE: usize = 60; // hz
 const ON_COLOR: [u8; 4] = [0xCD, 0xDA, 0xFF, 0xFF];
 const OFF_COLOR: [u8; 4] = [0x00, 0x0C, 0x1C, 0xFF];
 
@@ -116,7 +117,9 @@ impl Chip8 {
 		self.render();
 
 		println_debug!("Starting execution");
-		let time_per_instruction = Duration::from_secs_f32(1.0 / (self.ips as f32));
+		let time_per_instruction = Duration::from_secs_f64(1.0 / (self.ips as f64));
+		let time_per_tick =  Duration::from_secs_f64(1.0 / (REFRESH_RATE as f64));
+		let mut last_tick_time = Instant::now();
 		loop {
 			let start_time = Instant::now();
 
@@ -129,6 +132,21 @@ impl Chip8 {
 					println!("Failed: {why}");
 					break;
 				}
+			}
+
+			if Instant::now() - last_tick_time > time_per_tick {
+				// 60hz tick
+				if self.pixel_buf_updated {
+					self.render();
+					self.pixel_buf_updated = false;
+				}
+				if self.delay_t > 0 {
+					self.delay_t -= 1;
+				}
+				if self.sound_t > 0 {
+					self.sound_t -= 1;
+				}
+				last_tick_time = Instant::now();
 			}
 
 			let elapsed = Instant::now() - start_time;
@@ -173,7 +191,6 @@ impl Chip8 {
 								// Clear screen
 								self.pixel_buf = [[false; DISPLAY_W]; DISPLAY_H];
 								self.pixel_buf_updated = true;
-								self.render(); // TODO delete
 							},
 							(0xE, 0xE) => {
 								// Return from subroutine
@@ -321,10 +338,22 @@ impl Chip8 {
 					}
 				}
 				self.V[0xF] = if unset_pixel {1} else {0};
-				self.render(); // TODO delte
+				self.pixel_buf_updated = true;
 			},
 			0xF => {
 				match (nibbles[2], nibbles[3]) {
+					(0x0, 0x7) => {
+						// Set VS to delay timer value
+						self.V[X] = self.delay_t;
+					},
+					(0x1, 0x5) => {
+						// Set delay timer to VX
+						self.delay_t = self.V[X];
+					},
+					(0x1, 0x8) => {
+						// Set sound timer to VX
+						self.sound_t = self.V[X];
+					},
 					(0x1, 0xE) => {
 						// Increments I by VX
 						self.I = self.I.wrapping_add(self.V[X] as u16);
