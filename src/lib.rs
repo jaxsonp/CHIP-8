@@ -2,7 +2,7 @@
 
 use std::fs::File;
 use std::io::prelude::*;
-use std::ops::Shr;
+use std::ops::{AddAssign, BitAndAssign, BitOrAssign, BitXorAssign, Shr};
 use std::path::Path;
 use pixels::{Pixels, wgpu::Color};
 
@@ -44,10 +44,8 @@ pub struct Chip8 {
 	pc: u16,
 	/// Index register
 	I: u16,
-	/// Stack
-	stack: [u16; STACK_SIZE],
-	/// Stack index
-	stack_i: usize,
+	/// Function return stack
+	stack: Vec<u16>,
 	/// Delay timer
 	delay_t: u8,
 	/// Sound timer
@@ -75,8 +73,7 @@ impl Chip8 {
 			pixels,
 			pc: PROGRAM_START_ADDR,
 			I: 0x0,
-			stack: [0x0; STACK_SIZE],
-			stack_i: 0,
+			stack: Vec::new(),
 			delay_t: 0,
 			sound_t: 0,
 			V: [0; N_REGISTERS]
@@ -129,13 +126,9 @@ impl Chip8 {
 			match self.decode_and_execute(instruction) {
 				Ok(_) => {},
 				Err(why) => {
-					println!("{why}");
+					println!("Failed: {why}");
 					break;
 				}
-			}
-
-			if instruction == 0x1228 {
-				break;
 			}
 		}
 		println_debug!("Completed execution");
@@ -178,8 +171,13 @@ impl Chip8 {
 								self.render(); // TODO delete
 							},
 							(0xE, 0xE) => {
-								// Return
-								// TODO
+								// Return from subroutine
+								self.pc = match self.stack.pop() {
+									Some(pc) => pc,
+									None => {
+										return Err("Returned outside of subroutine");
+									}
+								}
 							}
 							_ => {
 								return Err("Unknown instruction");
@@ -195,13 +193,95 @@ impl Chip8 {
 				// Jump
 				self.pc = NNN;
 			},
+			0x2 => {
+				// Call subroutine at NNN
+				self.stack.push(self.pc);
+				self.pc = NNN;
+			},
+			0x3 => {
+				// Skip if VX == NN
+				if self.V[X] == NN {
+					self.pc += 2;
+				}
+			},
+			0x4 => {
+				// Skip if VX != NN
+				if self.V[X] != NN {
+					self.pc += 2;
+				}
+			},
+			0x5 => {
+				// Skip if VX == VY
+				if self.V[X] == self.V[Y] {
+					self.pc += 2;
+				}
+			},
 			0x6 => {
 				// Set register to value
 				self.V[X] = NN;
 			},
 			0x7 => {
 				// Add value to register
-				self.V[X] += NN;
+				self.V[X] = self.V[X].wrapping_add(NN);
+			},
+			0x8 => {
+				match nibbles[3] {
+					0x0 => {
+						// Assign VX = VY
+						self.V[X] = self.V[Y];
+					},
+					0x1 => {
+						// Assign VX |= VY (bitwise or)
+						self.V[X].bitor_assign(self.V[Y]);
+					},
+					0x2 => {
+						// Assign VX &= VY (bitwise and)
+						self.V[X].bitand_assign(self.V[Y]);
+					},
+					0x3 => {
+						// Assign VX ^= VY (bitwise xor)
+						self.V[X].bitxor_assign(self.V[Y]);
+					},
+					0x4 => {
+						// Assign VX += VY
+						self.V[X] = self.V[X].wrapping_add(self.V[Y]);
+					},
+					0x5 => {
+						// Assign VX -= VY
+						self.V[X] = self.V[X].wrapping_sub(self.V[Y]);
+					},
+					0x6 => {
+						// Bitshift right VX >>= 1
+						// (store overflow in VF)
+						self.V[0xF] = self.V[X] & 0x1;
+						self.V[X] = self.V[X].wrapping_shr(1);
+						self.V[X] &= 0x7F;
+
+					},
+					0x7 => {
+						// Assign VX = VY - VX
+						// (set VF to 0 if underflow, 1 otherwise)
+						self.V[0xF] = if self.V[X] <= self.V[Y] { 1 } else { 0 };
+						self.V[X] = self.V[Y] - self.V[X];
+
+					},
+					0xE => {
+						// Bitshift left VX <<= 1
+						// (store overflow in VF)
+						self.V[X] = self.V[X].wrapping_shl(1);
+						self.V[0xF] = self.V[X] & 0x1;
+						self.V[X] &= 0xFE;
+					},
+					_ => {
+						return Err("Unknown instruction");
+					},
+				}
+			},
+			0x9 => {
+				// Skip if VX != VY
+				if self.V[X] != self.V[Y] {
+					self.pc += 2;
+				}
 			},
 			0xA => {
 				// Set index register
@@ -209,13 +289,13 @@ impl Chip8 {
 			},
 			0xD => {
 				// Draw
+				// draws an 8 wide, N tall sprite at VX, VY from the memory location at I
 				let sprite_x = self.V[X] as usize;
 				let sprite_y = self.V[Y] as usize;
 				let mut unset_pixel = false;
-				println_debug!("Drawing sprite at {}, {}", sprite_x, sprite_y);
 				for row in 0..(N as usize) {
+
 					let mut pixel_values = self.memory[addr!(self.I) + row];
-					println_debug!(" - {}: {:#04X}", row, pixel_values);
 					for col in (0..8).rev() {
 						if pixel_values & 0x1 == 1 {
 							let old_value = self.pixel_buf[sprite_y + row][sprite_x + col];
@@ -227,6 +307,37 @@ impl Chip8 {
 				}
 				self.V[0xF] = if unset_pixel {1} else {0};
 				self.render(); // TODO delte
+			},
+			0xF => {
+				match (nibbles[2], nibbles[3]) {
+					(0x3, 0x3) => {
+						// Binary coded decimal storage
+						// Store VX's hundreds digit at I, tens at I+1, and ones at I+2
+
+						self.memory[addr!(self.I)] = self.V[X].div_euclid(100);
+						self.memory[addr!(self.I) + 1] = self.V[X].div_euclid(10) % 10;
+						self.memory[addr!(self.I) + 2] = self.V[X] % 10;
+					},
+					(0x5, 0x5) => {
+						// Register dump
+						// Store V0, V1, ... VX at address I+0, I+1, ... I+X
+						let addr = addr!(self.I);
+						for i in 0..=X {
+							self.memory[addr + i] = self.V[i];
+						}
+					},
+					(0x6, 0x5) => {
+						// Register load
+						// Move values from I+0, I+1, ... I+X in V0, V1, ... VX
+						let addr = addr!(self.I);
+						for i in 0..=X {
+							self.V[i] = self.memory[addr + i];
+						}
+					},
+					_ => {
+						return Err("Unknown instruction");
+					},
+				}
 			},
 			_ => {
 				return Err("Unknown instruction");
