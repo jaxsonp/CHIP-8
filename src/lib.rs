@@ -4,11 +4,12 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::ops::{ BitAndAssign, BitOrAssign, BitXorAssign };
 use std::path::Path;
+use std::sync::{ Arc, Mutex };
 use std::time::{ Instant, Duration };
 use std::thread;
 use pixels::{ Pixels, wgpu::Color };
 use rand::Rng;
-use rodio::{ OutputStream, OutputStreamHandle, Sink };
+use rodio::{ OutputStream, Sink };
 use rodio::source::{ SineWave, Source };
 
 mod font;
@@ -114,7 +115,7 @@ impl Chip8 {
     }
 
     /// Starts execution cycle
-    pub fn run(&mut self) -> () {
+    pub fn run(&mut self, keypad_state: Arc<Mutex<[bool; 16]>>) -> () {
         // configuring pixel buffer
         self.pixels.clear_color(Color {
             r: OFF_COLOR[0] as f64,
@@ -130,6 +131,7 @@ impl Chip8 {
         buzzer.pause();
         buzzer.append(SineWave::new(BUZZER_FREQ).amplify(0.1).repeat_infinite());
 
+        // execution loop
         println_debug!("Starting execution\n");
         let time_per_instruction = Duration::from_secs_f64(1.0 / (self.ips as f64));
         let time_per_tick = Duration::from_secs_f64(1.0 / (REFRESH_RATE as f64));
@@ -137,10 +139,11 @@ impl Chip8 {
         loop {
             let start_time = Instant::now();
 
+            // CPU logic
             let instruction = self.fetch_instruction();
             //println_debug!("{:#05X} > {:#06X}", self.pc - 2, instruction);
 
-            match self.decode_and_execute(instruction) {
+            match self.decode_and_execute(instruction, &keypad_state) {
                 Ok(_) => {}
                 Err(why) => {
                     println!("Failed: {why}");
@@ -148,8 +151,8 @@ impl Chip8 {
                 }
             }
 
+            // 60hz tick
             if Instant::now() - last_tick_time > time_per_tick {
-                // 60hz tick
                 if self.pixel_buf_updated {
                     self.render();
                     self.pixel_buf_updated = false;
@@ -189,7 +192,18 @@ impl Chip8 {
         instruction
     }
 
-    fn decode_and_execute(&mut self, instruction: u16) -> Result<(), &str> {
+    fn decode_and_execute(
+        &mut self,
+        instruction: u16,
+        keypad_state: &Arc<Mutex<[bool; 16]>>
+    ) -> Result<(), &str> {
+        // helper closure to simplify extracting key value from arc mutex
+        let get_keypad_state = || {
+            let keypad: [bool; 16] = *keypad_state.lock().unwrap();
+            keypad
+        };
+
+        // deconstructing instruction
         let nibbles: [u16; 4] = [
             (instruction & 0xf000).checked_shr(12).unwrap(),
             (instruction & 0x0f00).checked_shr(8).unwrap(),
@@ -364,11 +378,56 @@ impl Chip8 {
                 self.V[0xf] = if unset_pixel { 1 } else { 0 };
                 self.pixel_buf_updated = true;
             }
+            0xe => {
+                match (nibbles[2], nibbles[3]) {
+                    (0x9, 0xe) => {
+                        // Skip if key_pressed == VX
+                        let keypad = get_keypad_state();
+                        if keypad[self.V[X] as usize] {
+                            self.pc += 2;
+                        }
+                    }
+                    (0xa, 0x1) => {
+                        // Skip if key_pressed != VX
+                        let keypad = get_keypad_state();
+                        if !keypad[self.V[X] as usize] {
+                            self.pc += 2;
+                        }
+                    }
+                    _ => {
+                        return Err("Unknown instruction");
+                    }
+                }
+            }
             0xf => {
                 match (nibbles[2], nibbles[3]) {
                     (0x0, 0x7) => {
-                        // Set VS to delay timer value
+                        // Set VX to delay timer value
                         self.V[X] = self.delay_t;
+                    }
+                    (0x0, 0xa) => {
+                        // Block for next keypress, store in VX
+
+                        // rendering before blocking (cus blocking takes long time someimtes)
+                        self.render();
+                        self.pixel_buf_updated = false;
+
+                        // waiting for key event that is not a release
+                        let mut keypad = get_keypad_state();
+                        let mut last_keypad = keypad;
+                        let mut done = false;
+                        while !done {
+                            thread::sleep(std::time::Duration::from_secs_f32(1.0 / 60.0));
+                            for i in 0..16 {
+                                if keypad[i] && !last_keypad[i] {
+                                    self.V[X] = i as u8;
+                                    done = true;
+                                    break;
+                                }
+                            }
+                            last_keypad = keypad;
+                            keypad = get_keypad_state();
+                        }
                     }
                     (0x1, 0x5) => {
                         // Set delay timer to VX

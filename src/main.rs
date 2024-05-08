@@ -1,4 +1,5 @@
 use std::thread;
+use std::sync::{ Arc, Mutex };
 use clap::Parser;
 
 pub mod display;
@@ -29,14 +30,17 @@ fn main() {
         }
     }
 
-    // starting
+    let keypad_state: Arc<Mutex<[bool; 16]>> = Arc::new(Mutex::new([false; 16]));
+    let keypad_state2 = keypad_state.clone();
+    //let (key_tx, key_rx) = mpsc::channel();
 
+    // starting emulator thread
     match
         thread::Builder
             ::new()
             .name("emulator_thread".to_string())
             .spawn(move || {
-                emulator.run();
+                emulator.run(keypad_state2);
             })
     {
         Err(e) => {
@@ -45,7 +49,7 @@ fn main() {
         }
         Ok(_) => {}
     }
-    display.run_event_loop();
+    display.run_event_loop(keypad_state);
 }
 
 // Argument parsing stuff
