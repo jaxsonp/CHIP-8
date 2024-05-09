@@ -153,6 +153,7 @@ impl Chip8 {
 
             // 60hz tick
             if Instant::now() - last_tick_time > time_per_tick {
+                println_debug!("{:?}", self.V);
                 if self.pixel_buf_updated {
                     self.render();
                     self.pixel_buf_updated = false;
@@ -163,7 +164,7 @@ impl Chip8 {
                 if self.delay_t > 0 {
                     self.delay_t -= 1;
                 }
-                print!("{}\r", self.sound_t);
+                //print!("{}\r", self.sound_t);
                 // sound timer
                 if self.sound_t > 0 {
                     if buzzer.is_paused() {
@@ -310,7 +311,9 @@ impl Chip8 {
                     }
                     0x5 => {
                         // Assign VX -= VY
-                        self.V[X] = self.V[X].wrapping_sub(self.V[Y]);
+                        let underflow: bool;
+                        (self.V[X], underflow) = self.V[X].overflowing_sub(self.V[Y]);
+                        self.V[0xf] = if underflow { 0 } else { 1 };
                     }
                     0x6 => {
                         // Bitshift right VX >>= 1
@@ -419,7 +422,7 @@ impl Chip8 {
                         while !done {
                             thread::sleep(std::time::Duration::from_secs_f32(1.0 / 60.0));
                             for i in 0..16 {
-                                if keypad[i] && !last_keypad[i] {
+                                if !keypad[i] && last_keypad[i] {
                                     self.V[X] = i as u8;
                                     done = true;
                                     break;
