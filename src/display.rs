@@ -1,11 +1,10 @@
 #![allow(dead_code)]
 use std::sync::{ Arc, Mutex };
-use rand::distributions::Open01;
 use winit::{
-    dpi::{ LogicalSize, PhysicalSize },
+    dpi::LogicalSize,
     event::{ ElementState, Event, KeyEvent, WindowEvent },
     event_loop::EventLoop,
-    keyboard::{ Key, KeyCode, PhysicalKey },
+    keyboard::{ KeyCode, PhysicalKey },
     window::{ Window, WindowBuilder },
 };
 use pixels::{ Pixels, SurfaceTexture };
@@ -57,7 +56,7 @@ impl Display {
         self.event_loop
             .run(|event, window_target| {
                 match event {
-                    Event::WindowEvent { window_id, event } => {
+                    Event::WindowEvent { window_id: _, event } => {
                         match event {
                             WindowEvent::CloseRequested => {
                                 window_target.exit();
@@ -65,9 +64,6 @@ impl Display {
                             WindowEvent::KeyboardInput {
                                 event: KeyEvent {
                                     physical_key,
-                                    logical_key,
-                                    text,
-                                    location,
                                     state: ElementState::Pressed,
                                     repeat: false,
                                     ..
@@ -97,9 +93,6 @@ impl Display {
                             WindowEvent::KeyboardInput {
                                 event: KeyEvent {
                                     physical_key,
-                                    logical_key,
-                                    text,
-                                    location,
                                     state: ElementState::Released,
                                     repeat: false,
                                     ..

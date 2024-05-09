@@ -153,18 +153,15 @@ impl Chip8 {
 
             // 60hz tick
             if Instant::now() - last_tick_time > time_per_tick {
-                println_debug!("{:?}", self.V);
                 if self.pixel_buf_updated {
                     self.render();
                     self.pixel_buf_updated = false;
                 }
 
-                //println!("{}", self.delay_t);
                 // delay timer
                 if self.delay_t > 0 {
                     self.delay_t -= 1;
                 }
-                //print!("{}\r", self.sound_t);
                 // sound timer
                 if self.sound_t > 0 {
                     if buzzer.is_paused() {
